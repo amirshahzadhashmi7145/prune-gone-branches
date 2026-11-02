@@ -1,0 +1,38 @@
+{
+  "name": "prune-gone-branches",
+  "version": "1.0.0",
+  "description": "Delete local git branches whose remote branch is gone. Dry run by default, protects main/master, zero dependencies.",
+  "keywords": ["git", "branch", "prune", "cleanup", "gone", "stale", "cli", "delete-branches"],
+  "license": "MIT",
+  "author": "Amir Shahzad Hashmi",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amirshahzadhashmi7145/prune-gone-branches.git"
+  },
+  "bugs": { "url": "https://github.com/amirshahzadhashmi7145/prune-gone-branches/issues" },
+  "homepage": "https://github.com/amirshahzadhashmi7145/prune-gone-branches#readme",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    }
+  },
+  "bin": { "prune-gone-branches": "dist/cli.js" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "tsc --noEmit && node --test \"test/**/*.test.mjs\"",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0"
+  }
+}
