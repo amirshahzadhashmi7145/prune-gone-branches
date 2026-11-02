@@ -27,7 +27,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "test": "tsc --noEmit && node --test \"test/**/*.test.mjs\"",
+    "test": "tsc --noEmit && node --test test/*.test.mjs",
     "prepublishOnly": "npm run build && npm test"
   },
   "devDependencies": {
