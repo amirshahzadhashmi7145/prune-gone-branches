@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findGoneBranches, pruneGoneBranches, currentBranch, GitError } from "../dist/index.js";
-import { makeRepo, branches, g } from "./helpers.mjs";
+import { findGoneBranches, pruneGoneBranches, currentBranch, resolveBase, GitError } from "../dist/index.js";
+import { makeRepo, addSquashedBranches, branches, g } from "./helpers.mjs";
 
 test("findGoneBranches lists only branches whose upstream is gone", () => {
   const { work } = makeRepo();
@@ -82,4 +82,57 @@ test("currentBranch returns null when detached", () => {
 test("throws GitError outside a repository", () => {
   const { root } = makeRepo();
   assert.throws(() => findGoneBranches({ cwd: root, fetch: false }), GitError);
+});
+
+const statuses = (gone) => Object.fromEntries(gone.map((b) => [b.name, b.status]));
+
+test("status tells merged, squash-merged, rebase-merged and unmerged branches apart", () => {
+  const { work } = makeRepo();
+  addSquashedBranches(work);
+  assert.deepEqual(statuses(findGoneBranches({ cwd: work }).gone), {
+    "gone-merged": "merged",
+    "gone-unmerged": "unmerged",
+    "gone-squashed": "squashed",
+    "gone-rebased": "rebased",
+    "gone-diverged": "unmerged",
+  });
+});
+
+test("delete without force removes squash- and rebase-merged branches, keeps unmerged ones", () => {
+  const { work } = makeRepo();
+  addSquashedBranches(work);
+  const r = pruneGoneBranches({ cwd: work, delete: true });
+  assert.deepEqual(r.deleted.sort(), ["gone-merged", "gone-rebased", "gone-squashed"]);
+  assert.deepEqual(r.failed.map((f) => f.name).sort(), ["gone-diverged", "gone-unmerged"]);
+  assert.deepEqual(branches(work), ["gone-diverged", "gone-unmerged", "kept", "local-only", "main"]);
+});
+
+test("squash detection compares against the remote base even when local main is stale", () => {
+  const { work } = makeRepo();
+  addSquashedBranches(work);
+  g(work, "reset", "-q", "--hard", "HEAD~4"); // local main is now behind origin/main
+  const r = pruneGoneBranches({ cwd: work, delete: true });
+  assert.deepEqual(r.deleted.sort(), ["gone-merged", "gone-rebased", "gone-squashed"]);
+});
+
+test("squashed:false restores plain git branch -d behaviour", () => {
+  const { work } = makeRepo();
+  addSquashedBranches(work);
+  const found = statuses(findGoneBranches({ cwd: work, squashed: false }).gone);
+  assert.equal(found["gone-squashed"], "unmerged");
+  assert.equal(found["gone-merged"], "merged");
+  const r = pruneGoneBranches({ cwd: work, delete: true, squashed: false });
+  assert.deepEqual(r.deleted, ["gone-merged"]);
+});
+
+test("base option and resolveBase", () => {
+  const { work } = makeRepo();
+  addSquashedBranches(work);
+  assert.equal(resolveBase(work, "origin"), "refs/remotes/origin/main");
+  assert.equal(resolveBase(work, "origin", "kept"), "kept");
+  assert.throws(() => resolveBase(work, "origin", "no-such-ref"), GitError);
+  // Against a base that never received the squash commit, nothing new counts as merged.
+  const found = statuses(findGoneBranches({ cwd: work, base: "kept" }).gone);
+  assert.equal(found["gone-squashed"], "unmerged");
+  assert.equal(found["gone-merged"], "merged");
 });

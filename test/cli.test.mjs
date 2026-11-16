@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeRepo, branches, runCli } from "./helpers.mjs";
+import { addSquashedBranches, makeRepo, branches, runCli } from "./helpers.mjs";
 
 test("dry run lists branches and exits 1", () => {
   const { work } = makeRepo();
@@ -67,4 +67,25 @@ test("--help and --version", () => {
   const v = runCli(work, "-v");
   assert.equal(v.code, 0);
   assert.match(v.out, /^\d+\.\d+\.\d+\n$/);
+});
+
+test("dry run labels each branch and --delete removes squash-merged ones without --force", () => {
+  const { work } = makeRepo();
+  addSquashedBranches(work);
+  const dry = runCli(work);
+  assert.equal(dry.code, 1);
+  assert.match(dry.out, /gone-squashed .*squash-merged\)/);
+  assert.match(dry.out, /gone-rebased .*rebase-merged\)/);
+  assert.match(dry.out, /gone-unmerged .*NOT merged\)/);
+  assert.match(dry.out, /add --force to also delete the 2 not merged/);
+
+  const del = runCli(work, "--delete");
+  assert.equal(del.code, 1); // two unmerged branches remain
+  assert.match(del.out, /Deleted gone-squashed/);
+  assert.deepEqual(branches(work), ["gone-diverged", "gone-unmerged", "kept", "local-only", "main"]);
+
+  const { work: w2 } = makeRepo();
+  addSquashedBranches(w2);
+  assert.match(runCli(w2, "--delete", "--no-squashed").out, /Failed  gone-squashed/);
+  assert.equal(runCli(w2, "--base", "nope").code, 2);
 });

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -59,4 +59,33 @@ export function branches(cwd) {
 export function runCli(cwd, ...args) {
   const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8" });
   return { code: r.status, out: r.stdout, err: r.stderr };
+}
+
+/**
+ * Add to a makeRepo() clone three branches that were merged on the remote without a merge commit,
+ * then deleted there:
+ *   gone-squashed  two commits, landed on main as one squash commit
+ *   gone-rebased   two commits, landed on main as two cherry-picked commits
+ *   gone-diverged  two commits, only the first landed on main
+ */
+export function addSquashedBranches(work) {
+  const commitFile = (name, text, message) => {
+    writeFileSync(join(work, name), text);
+    g(work, "add", name);
+    g(work, "commit", "-q", "-m", message);
+  };
+  for (const b of ["gone-squashed", "gone-rebased", "gone-diverged"]) {
+    g(work, "checkout", "-q", "-b", b, "main");
+    commitFile(`${b}-1.txt`, "one\n", `${b} part 1`);
+    commitFile(`${b}-2.txt`, "two\n", `${b} part 2`);
+    g(work, "push", "-q", "-u", "origin", b);
+  }
+  g(work, "checkout", "-q", "main");
+  commitFile("unrelated.txt", "main moved on\n", "unrelated work on main");
+  g(work, "merge", "-q", "--squash", "gone-squashed");
+  g(work, "commit", "-q", "-m", "gone-squashed (#1)");
+  g(work, "cherry-pick", "gone-rebased~1", "gone-rebased");
+  g(work, "cherry-pick", "gone-diverged~1");
+  g(work, "push", "-q", "origin", "main");
+  g(work, "push", "-q", "origin", "--delete", "gone-squashed", "gone-rebased", "gone-diverged");
 }

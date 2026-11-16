@@ -39,7 +39,9 @@ Requires Node 18 or newer and git on your PATH.
 prune-gone-branches [options]
 
   -d, --delete           Delete the branches (default is a dry run)
-  -f, --force            Use "git branch -D" so unmerged branches are deleted too
+  -f, --force            Delete unmerged branches too ("git branch -D")
+  -b, --base <ref>       Branch to compare against (default: the remote's default branch)
+      --no-squashed      Do not detect squash-merged and rebase-merged branches
       --no-fetch         Skip "git fetch --prune"
   -r, --remote <name>    Only consider branches tracking this remote
   -p, --protect <names>  Comma-separated names or patterns never to delete
@@ -57,7 +59,16 @@ Exit codes: `0` nothing to do or every deletion succeeded, `1` dry run found bra
 1. Runs `git fetch --prune` so remote-tracking refs match the server. Skip with `--no-fetch`.
 2. Lists local branches whose upstream tracking status is `[gone]`, meaning the branch was pushed and the remote branch has since been deleted.
 3. Skips the checked-out branch and anything matching `--protect`.
-4. With `--delete`, runs `git branch -d` on each. Git refuses unmerged branches, which the tool reports. Add `--force` to use `git branch -D`.
+4. Works out whether each branch's work is already in the base branch (the remote's default branch, or `--base`):
+   - **merged**: the branch tip is an ancestor of the base.
+   - **squash-merged**: the branch's combined change is in the base as a single commit, which is what GitHub's "Squash and merge" produces.
+   - **rebase-merged**: every commit on the branch has an equivalent commit in the base.
+   - **NOT merged**: anything else.
+5. With `--delete`, removes the merged, squash-merged and rebase-merged branches. Unmerged branches are left alone and reported. Add `--force` to delete those too.
+
+Plain `git branch -d` refuses squash-merged branches because their commits never reach the base, which is why most cleanup scripts end up needing `-D` for everything. This tool checks the content instead, so `--delete` alone is enough after a squash merge and `--force` is only needed for work that really is unmerged. Pass `--no-squashed` to fall back to `git branch -d` behaviour.
+
+The squash check writes one unreferenced scratch commit per branch to the object store, including during a dry run. Nothing points at it and `git gc` removes it.
 
 Branches that were never pushed are not touched. They have no upstream, so they cannot be "gone".
 
@@ -67,7 +78,7 @@ Branches that were never pushed are not touched. They have no upstream, so they 
 # See what would be deleted
 prune-gone-branches
 
-# Delete merged ones, keep anything unmerged
+# Delete merged ones (including squash and rebase merges), keep anything unmerged
 prune-gone-branches -d
 
 # Delete everything whose remote is gone, merged or not
@@ -95,13 +106,14 @@ git gone -d     # delete
 import { findGoneBranches, pruneGoneBranches } from "prune-gone-branches";
 
 const { gone, skipped } = findGoneBranches({ cwd: "/path/to/repo" });
-// gone: [{ name, upstream, sha }], skipped: [{ name, reason }]
+// gone: [{ name, upstream, sha, status }], skipped: [{ name, reason }]
+// status: "merged" | "squashed" | "rebased" | "unmerged"
 
 const result = pruneGoneBranches({ cwd: "/path/to/repo", delete: true, force: false });
 // result.deleted, result.failed, result.skipped, result.dryRun
 ```
 
-Options: `cwd`, `fetch` (default true), `remote`, `protect` (default `["main", "master", "develop"]`), `delete` (default false), `force` (default false). Git failures throw a `GitError` with the failing arguments attached.
+Options: `cwd`, `fetch` (default true), `remote`, `protect` (default `["main", "master", "develop"]`), `base` (default: the remote's default branch), `squashed` (default true), `delete` (default false), `force` (default false). `branchStatus(branch, base, cwd)` and `resolveBase(cwd, remote?, base?)` are exported too. Git failures throw a `GitError` with the failing arguments attached.
 
 Both ESM and CommonJS are supported, with TypeScript types included.
 

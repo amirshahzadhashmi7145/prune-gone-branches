@@ -11,7 +11,9 @@ Usage:
 
 Options:
   -d, --delete           Delete the branches (default is a dry run)
-  -f, --force            Use "git branch -D" so unmerged branches are deleted too
+  -f, --force            Delete unmerged branches too ("git branch -D")
+  -b, --base <ref>       Branch to compare against (default: the remote's default branch)
+      --no-squashed      Do not detect squash-merged and rebase-merged branches
       --no-fetch         Skip "git fetch --prune"
   -r, --remote <name>    Only consider branches tracking this remote
   -p, --protect <names>  Comma-separated names or patterns never to delete
@@ -32,6 +34,8 @@ interface Args {
   force: boolean;
   fetch: boolean;
   remote?: string;
+  base?: string;
+  squashed: boolean;
   protect: string[];
   json: boolean;
   quiet: boolean;
@@ -51,7 +55,7 @@ function readVersion(): string {
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { delete: false, force: false, fetch: true, protect: DEFAULT_PROTECTED, json: false, quiet: false };
+  const args: Args = { delete: false, force: false, fetch: true, squashed: true, protect: DEFAULT_PROTECTED, json: false, quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => {
@@ -66,6 +70,8 @@ function parseArgs(argv: string[]): Args {
       case "-f": case "--force": args.force = true; break;
       case "--no-fetch": args.fetch = false; break;
       case "-r": case "--remote": args.remote = next(); break;
+      case "-b": case "--base": args.base = next(); break;
+      case "--no-squashed": args.squashed = false; break;
       case "-p": case "--protect": args.protect = next().split(",").map((s) => s.trim()).filter(Boolean); break;
       case "--json": args.json = true; break;
       case "-q": case "--quiet": args.quiet = true; break;
@@ -98,9 +104,13 @@ function main(): void {
     w("No local branches with a gone upstream.");
   } else if (result.dryRun) {
     w(`Branches whose upstream is gone (${result.gone.length}):`);
-    for (const b of result.gone) w(`  ${b.name}  (${b.sha}, was ${b.upstream})`);
+    const label = { merged: "merged", squashed: "squash-merged", rebased: "rebase-merged", unmerged: "NOT merged" };
+    for (const b of result.gone) w(`  ${b.name}  (${b.sha}, was ${b.upstream}, ${label[b.status]})`);
     w("");
-    w("Dry run. Re-run with --delete to remove them, add --force for unmerged branches.");
+    const unmerged = result.gone.filter((b) => b.status === "unmerged").length;
+    w(unmerged === 0
+      ? "Dry run. Re-run with --delete to remove them."
+      : `Dry run. Re-run with --delete to remove the merged ones; add --force to also delete the ${unmerged} not merged.`);
   } else {
     for (const name of result.deleted) w(`Deleted ${name}`);
     for (const f of result.failed) w(`Failed  ${f.name}: ${f.reason.split("\n")[0]}`);
